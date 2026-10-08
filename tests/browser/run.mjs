@@ -384,10 +384,49 @@ try {
   assert.equal(await evaluate('location.hash'), '#merge');
   console.log('PASS file-name rendering, rejection, merge hint/download, button labels and history');
 
-  await navigate('pdf2md');
-  await runConversion('custom.pdf', pdfBytes, /Conversion works locally/, 'existing PDF converter');
-  await runConversion('Report.PDF', pdfBytes, /Conversion works locally/, 'uppercase PDF filename');
-  await runConversion('a.pdf.b.pdf', pdfBytes, /Conversion works locally/, 'multiple PDF suffixes');
+  for (const tool of ['dicom', 'pdf2md']) {
+    const checkBlocked = async () => {
+      assert.match(await evaluate('document.querySelector("#tool-title").textContent'), /unavailable/i);
+      assert.equal(await evaluate('document.querySelector("#uploadArea").classList.contains("hidden")'), true);
+      assert.equal(await evaluate('document.querySelector("#fileInput").disabled'), true);
+      // Inject picker and drop events to check the guards as well as the disabled controls.
+      await select('blocked.pdf', pdfBytes);
+      await evaluate(`(() => {
+        const transfer = new DataTransfer();
+        transfer.items.add(new File(['synthetic DICOM'], 'patient.dcm'));
+        document.querySelector('#uploadArea').dispatchEvent(new DragEvent('drop', {dataTransfer: transfer, bubbles: true, cancelable: true}));
+        document.querySelector('#processBtn').dispatchEvent(new MouseEvent('click', {bubbles: true}));
+      })()`);
+      await delay(100);
+      assert.equal(await evaluate('document.querySelectorAll(".file-item").length'), 0);
+      assert.equal(await evaluate('document.querySelector("#processBtn").disabled'), true);
+      assert.equal(await evaluate('document.querySelector("#processBtn").classList.contains("hidden")'), true);
+      assert.equal(await evaluate('Boolean(document.querySelector("[aria-busy=true]"))'), false);
+      assert.equal(await evaluate('window.__downloads.length'), 0);
+      assert.equal(await evaluate('window.__workers'), 0);
+    };
+    await navigate(tool);
+    await checkBlocked();
+    if (tool === 'pdf2md') {
+      assert.deepEqual(await evaluate('[...document.querySelectorAll("#conversion-alternatives a")].map(a => a.hash)'), ['#anydoc', '#docling']);
+      await evaluate('document.querySelector("#conversion-alternatives a").click()');
+      await waitFor('location.hash === "#anydoc" && !document.querySelector("#fileInput").disabled');
+    }
+    await navigate('merge');
+    await select('first.pdf', pdfBytes);
+    await select('second.pdf', pdfBytes);
+    await evaluate(`document.querySelector('[data-tool=${tool}]').click()`);
+    await waitFor(`document.querySelector('.nav-item.active').dataset.tool === '${tool}'`);
+    await checkBlocked();
+    await evaluate('history.back()');
+    await waitFor('document.querySelector(".nav-item.active").dataset.tool === "merge"');
+    assert.equal(await evaluate('document.querySelector("#fileInput").disabled'), false);
+    assert.equal(await evaluate('document.querySelectorAll(".file-item").length'), 0);
+    await evaluate('history.forward()');
+    await waitFor(`document.querySelector('.nav-item.active').dataset.tool === '${tool}'`);
+    await checkBlocked();
+    console.log(`PASS disabled ${tool}: direct link, upload/drop/process guards, navigation from Merge and history`);
+  }
   await navigate('merge');
   await select('first.pdf', pdfBytes);
   await select('second.pdf', pdfBytes);
@@ -434,7 +473,7 @@ try {
     }
     console.log(`PASS split PDF filename: ${name}`);
   }
-  console.log('PASS existing PDF conversion, PDF merge/split, reordering and busy-state file protection');
+  console.log('PASS PDF merge/split, reordering and busy-state file protection');
 
   for (const width of [400, 1280]) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });

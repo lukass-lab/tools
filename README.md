@@ -2,19 +2,19 @@
 
 A modern, privacy-focused web application for document processing and medical imaging utilities. Built with Vite and ES modules — everything runs 100% in the browser.
 
+DICOM anonymization and the original PDF-to-Markdown converter are temporarily disabled. Their URLs show an explanation and cannot accept or process files. The separate Python DICOM CLI also exits with an error without reading or writing files.
+
 ## Features
 
 - **Merge PDF** — Combine multiple PDFs with drag-and-drop reordering
 - **Split PDF** — Split a PDF into individual pages, each downloaded separately
-- **Anonymize DICOM** — Remove patient identifiers from DICOM files while preserving imaging data
-- **PDF to Markdown** — Convert PDF documents to clean, structured Markdown text
 - **Merge Markdown** — Combine multiple Markdown or text files into a single document
 - **AnyDoc to Markdown** — Convert Word, PowerPoint, Excel, OpenDocument, EPUB, RTF, CSV and text-based PDF files to Markdown
 - **Docling to Markdown** — Convert Office, OpenDocument, HTML, EPUB, LaTeX, e-mail and text-based PDF files to Markdown
 
 Each tool has its own URL (e.g. `/tools/#anydoc`, `/tools/#docling`), so tools can be linked directly and work with browser Back/Forward.
 
-All tools share a consistent UI: drag-and-drop or file-picker upload, file list with reordering, progress bar, and automatic download of results.
+Available tools share a consistent UI: drag-and-drop or file-picker upload, file list with reordering, progress bar, and automatic download of results.
 
 ## Setup
 
@@ -34,13 +34,16 @@ npm test
 # Build and run production UI regression tests in installed Chrome/Chromium
 npm run test:browser
 
+# Check the disabled Python CLI (Python 3)
+python -B -m unittest discover -s tests -p "test_*.py"
+
 # Preview production build
 npm run preview
 ```
 
 Browser tests require Node.js 22+ and an installed Chrome, Chromium, or Edge browser. Set `CHROME_PATH` to the executable path if it is not detected automatically. The suite runs headlessly against a local server, uses generated documents, and checks conversion, failures, cancellation, navigation, file handling, and mobile layout. It requires no external service or document upload.
 
-GitHub Actions runs both test suites on pushes to `main` and pull requests, using Node.js 22 and the Chrome browser included in the Ubuntu 24.04 runner. The browser test command rebuilds `docs/` in the CI checkout; the workflow does not commit or deploy that output.
+GitHub Actions runs the JavaScript, browser and disabled-CLI tests on pushes to `main` and pull requests, using Node.js 22 and the Chrome browser included in the Ubuntu 24.04 runner. The browser test command rebuilds `docs/` in the CI checkout; the workflow does not commit or deploy that output.
 
 ## Project Structure
 
@@ -50,10 +53,10 @@ GitHub Actions runs both test suites on pushes to `main` and pull requests, usin
 ├── vite.config.js          # Vite config (base path, output to docs/)
 └── src/
     ├── main.js             # App logic, tool definitions, ToolManager class
-    ├── pdf2md.js           # PDF-to-Markdown conversion engine
+    ├── pdf2md.js           # Legacy PDF converter (disabled)
     ├── docConverters.js    # AnyDoc / Docling client (lazy Web Workers, error messages)
     ├── workers/            # anydoc.worker.js, docling.worker.js (WASM engines)
-    ├── dicomUtils.js       # DICOM parsing, anonymization, ZIP export
+    ├── dicomUtils.js       # Legacy DICOM implementation (disabled)
     ├── utils.js            # Shared helpers (download, file size, ID generation)
     └── styles.css          # Styling and responsive layout
 ```
@@ -68,25 +71,12 @@ Select two or more PDF files, reorder them via drag-and-drop, and merge into a s
 
 Upload a single PDF and receive each page as a separate PDF file.
 
-### Anonymize DICOM
+### Temporarily disabled tools
 
-1. Select DICOM files or a folder from a PACS export
-2. Review the analysis (file count, studies, series)
-3. Set an anonymous patient ID
-4. Download a ZIP with anonymized files organized by Study / Series / SOP
+- **DICOM (`#dicom`):** disabled because the legacy implementation can retain identifiers, truncate replacement IDs, and report incomplete processing as success. It must not be used for de-identification.
+- **Original PDF to Markdown (`#pdf2md`):** disabled because it can delete numbers and captions and collapse document structure. Use [AnyDoc](https://lukass-lab.github.io/tools/#anydoc) or [Docling](https://lukass-lab.github.io/tools/#docling) for text-based PDFs and review the output for accuracy. Docling's basic PDF output does not detect headings or tables.
 
-**Anonymized tags include:** PatientName, PatientID, PatientBirthDate, PatientSex, PatientAge, InstitutionName, InstitutionAddress, ReferringPhysicianName, PerformingPhysicianName, OperatorsName, and more. UIDs and imaging data are preserved for postprocessing.
-
-### PDF to Markdown
-
-Converts PDF documents to Markdown with:
-
-- Multi-column layout detection
-- Heading detection by font size and ALL-CAPS patterns
-- Table detection and formatting
-- Citation cleanup and DOI extraction
-- Math symbol wrapping
-- Auto-generated table of contents
+The legacy JavaScript sources remain for future repair, but are not imported into the app or included in the production build. The Python CLI is a disabled stub; its former implementation is available in Git history.
 
 ### Merge Markdown
 
@@ -126,9 +116,8 @@ Docling can report the same missing-text error for scanned and damaged PDFs. The
 
 - **Vite** — Build tool and dev server
 - **pdf-lib** — PDF creation, merging, and splitting
-- **pdfjs-dist** — PDF text extraction for Markdown conversion
-- **dicom-parser** — DICOM file parsing and tag modification
-- **JSZip** — ZIP file creation for DICOM exports
+- **pdfjs-dist / dicom-parser** — Retained dependencies for the disabled legacy sources; excluded from the current browser build
+- **JSZip** — Generates document fixtures in the browser test suite; also used by the disabled legacy DICOM source
 - **@firecrawl/anydoc-wasm** — AnyDoc document-to-Markdown engine
 - **docling.rs-wasm** — Docling document-to-Markdown engine
 

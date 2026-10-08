@@ -33,6 +33,8 @@ jobs:
         run: npm ci
       - name: Run unit tests
         run: npm test
+      - name: Check disabled Python CLI
+        run: python3 -B -m unittest discover -s tests -p 'test_*.py'
       - name: Check installed Chrome
         run: google-chrome --version
       - name: Build and run browser tests

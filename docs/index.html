@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medical Tools - PDF & DICOM Anonymizer</title>
+    <title>Medical Tools - Document Tools</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 85 L20 55 C10 45 10 30 25 20 C35 15 45 20 50 30 C55 20 65 15 75 20 C90 30 90 45 80 55 Z' fill='%23dc3545'/></svg>">
-  <script type="module" crossorigin src="/tools/assets/index-DAi-25k7.js"></script>
+  <script type="module" crossorigin src="/tools/assets/index-DHJ9AJeV.js"></script>
   <link rel="stylesheet" crossorigin href="/tools/assets/index-CPIa_oTA.css">
 </head>
 <body>
@@ -20,8 +20,8 @@
             <nav class="nav-menu" aria-label="Tools">
                 <a href="#merge" class="nav-item" data-tool="merge">Merge PDF</a>
                 <a href="#split" class="nav-item" data-tool="split">Split PDF</a>
-                <a href="#dicom" class="nav-item" data-tool="dicom">Anonymize DICOM</a>
-                <a href="#pdf2md" class="nav-item" data-tool="pdf2md">PDF to Markdown</a>
+                <a href="#dicom" class="nav-item" data-tool="dicom">DICOM (unavailable)</a>
+                <a href="#pdf2md" class="nav-item" data-tool="pdf2md">PDF to Markdown (unavailable)</a>
                 <a href="#mergemd" class="nav-item" data-tool="mergemd">Merge Markdown</a>
                 <a href="#anydoc" class="nav-item" data-tool="anydoc">AnyDoc to Markdown</a>
                 <a href="#docling" class="nav-item" data-tool="docling">Docling to Markdown</a>
@@ -34,6 +34,9 @@
             <h1 id="tool-title">Merge PDF files</h1>
             <p id="tool-description">Combine PDFs in the order you want with the easiest PDF merger available.</p>
             <p id="tool-note" class="tool-note hidden"></p>
+            <div id="conversion-alternatives" class="hidden">
+                <a href="#anydoc">Use AnyDoc to Markdown</a> · <a href="#docling">Use Docling to Markdown</a>
+            </div>
             <div id="navigation-notice" class="order-hint hidden" role="status"></div>
 
             <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-label="Select files">

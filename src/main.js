@@ -1,12 +1,6 @@
 import { PDFDocument } from 'pdf-lib';
-import { downloadFile, formatFileSize, generateAnonymousId } from './utils';
-import { convertPdfToMarkdown } from './pdf2md';
+import { downloadFile, formatFileSize } from './utils';
 import { convertDocumentToMarkdown } from './docConverters';
-import { 
-  processDicomBatch, 
-  analyzeDicomFiles, 
-  TAGS_TO_ANONYMIZE 
-} from './dicomUtils';
 
 const ANYDOC_EXTENSIONS = [
   '.docx', '.docm', '.doc', '.odt', '.rtf', '.epub',
@@ -52,29 +46,20 @@ const TOOLS = {
     hint: null
   },
   dicom: {
-    title: 'Anonymize DICOM',
-    description: 'Remove patient identifiers from DICOM files while preserving medical imaging data.',
-    buttonText: 'Anonymize DICOM files',
-    icon: '🏥',
-    uploadText: 'Select DICOM folder or files',
-    uploadSubtext: 'or drop DICOM folder/files here',
-    accept: '.dcm,.dicom',
-    extensions: null, // DICOM files often lack extensions; the parser validates them
-    multiple: true,
-    webkitdirectory: true,
-    hint: 'All patient identifiers will be replaced with anonymous values'
+    title: 'DICOM anonymization unavailable',
+    description: 'DICOM processing is disabled because the previous implementation could leave identifying information and truncate patient IDs. No files can be processed here.',
+    disabled: true,
+    buttonText: 'Unavailable',
+    accept: '',
+    multiple: false
   },
   pdf2md: {
-    title: 'PDF to Markdown',
-    description: 'Convert PDF documents to clean, structured Markdown text with preserved formatting.',
-    buttonText: 'Convert & Download',
-    icon: '📝',
-    uploadText: 'Select PDF file',
-    uploadSubtext: 'or drop PDF here',
-    accept: '.pdf',
-    extensions: ['.pdf'],
-    multiple: false,
-    hint: null
+    title: 'Original PDF converter unavailable',
+    description: 'This converter is disabled because it could delete numbers and captions and lose document structure. For text-based PDFs, use AnyDoc or Docling below and review the output for accuracy.',
+    disabled: true,
+    buttonText: 'Unavailable',
+    accept: '',
+    multiple: false
   },
   mergemd: {
     title: 'Merge Markdown files',
@@ -142,6 +127,7 @@ class ToolManager {
       toolDescription: document.getElementById('tool-description'),
       toolNote: document.getElementById('tool-note'),
       navigationNotice: document.getElementById('navigation-notice'),
+      conversionAlternatives: document.getElementById('conversion-alternatives'),
       toolPanel: document.querySelector('.tool-panel'),
       uploadArea: document.getElementById('uploadArea'),
       uploadText: document.getElementById('uploadText'),
@@ -234,22 +220,17 @@ class ToolManager {
     this.els.toolNote.textContent = toolData.note ?? '';
     this.els.toolNote.classList.toggle('hidden', !toolData.note);
     this.els.processText.textContent = toolData.buttonText;
-    this.els.uploadIcon.textContent = toolData.icon;
-    this.els.uploadText.textContent = toolData.uploadText;
-    this.els.uploadSubtext.textContent = toolData.uploadSubtext;
-    this.els.uploadArea.setAttribute('aria-label', toolData.uploadText);
+    this.els.uploadIcon.textContent = toolData.icon ?? '';
+    this.els.uploadText.textContent = toolData.uploadText ?? '';
+    this.els.uploadSubtext.textContent = toolData.uploadSubtext ?? '';
+    this.els.uploadArea.setAttribute('aria-label', toolData.uploadText ?? 'File upload unavailable');
     
+    this.els.uploadArea.classList.toggle('hidden', Boolean(toolData.disabled));
+    this.els.fileInput.disabled = Boolean(toolData.disabled);
+    this.els.processBtn.disabled = Boolean(toolData.disabled);
+    this.els.conversionAlternatives.classList.toggle('hidden', tool !== 'pdf2md');
     this.els.fileInput.accept = toolData.accept;
     this.els.fileInput.multiple = toolData.multiple;
-    
-    // Enable directory selection for DICOM
-    if (tool === 'dicom') {
-      this.els.fileInput.setAttribute('webkitdirectory', '');
-      this.els.fileInput.setAttribute('directory', '');
-    } else {
-      this.els.fileInput.removeAttribute('webkitdirectory');
-      this.els.fileInput.removeAttribute('directory');
-    }
     
     this.selectedFiles = [];
     this.updateFileList();
@@ -259,7 +240,7 @@ class ToolManager {
   }
 
   handleFiles(files) {
-    if (this.busy) return;
+    if (this.busy || TOOLS[this.currentTool].disabled) return;
 
     const toolData = TOOLS[this.currentTool];
     const allFiles = Array.from(files);
@@ -285,7 +266,7 @@ class ToolManager {
 
   updateFileList() {
     const toolData = TOOLS[this.currentTool];
-    const hasFiles = this.selectedFiles.length > 0;
+    const hasFiles = !toolData.disabled && this.selectedFiles.length > 0;
     const showHint = Boolean(toolData.hint && this.selectedFiles.length > 1);
 
     this.els.fileList.classList.toggle('hidden', !hasFiles);
@@ -396,7 +377,7 @@ class ToolManager {
   }
 
   async processFiles() {
-    if (this.busy || this.selectedFiles.length === 0) return;
+    if (this.busy || TOOLS[this.currentTool].disabled || this.selectedFiles.length === 0) return;
     
     this.busy = true;
     this.syncToolFromHash();
@@ -425,12 +406,6 @@ class ToolManager {
           break;
         case 'split':
           await this.splitPDF();
-          break;
-        case 'dicom':
-          await this.anonymizeDICOMs();
-          break;
-        case 'pdf2md':
-          await this.convertPdfToMd();
           break;
         case 'mergemd':
           await this.mergeMarkdown();
@@ -503,117 +478,6 @@ class ToolManager {
       
       this.updateProgress(((i + 1) / pageCount) * 100);
       await new Promise(resolve => setTimeout(resolve, 50));
-    }
-  }
-
-  async anonymizeDICOMs() {
-    try {
-      // Generate anonymous patient ID
-      const anonymousId = generateAnonymousId('ANON');
-      
-      // Ask user for custom ID or use generated one
-      const customId = prompt(
-        `Enter patient ID for anonymization:\n(Leave empty to use: ${anonymousId})`,
-        anonymousId
-      );
-      
-      if (!customId) {
-        alert('Anonymization cancelled - no patient ID provided');
-        return;
-      }
-      
-      this.updateProgress(5);
-      
-      // Analyze files first
-      const analysis = await analyzeDicomFiles(this.selectedFiles);
-      
-      this.updateProgress(15);
-      
-      if (analysis.validDicoms === 0) {
-        throw new Error('No valid DICOM files found');
-      }
-      
-      // Show analysis
-      const proceed = confirm(
-        `DICOM Analysis:\n\n` +
-        `Total files: ${analysis.totalFiles}\n` +
-        `Valid DICOM files: ${analysis.validDicoms}\n` +
-        `Studies: ${analysis.studies}\n` +
-        `Series: ${analysis.series}\n` +
-        `Invalid files: ${analysis.invalidFiles.length}\n\n` +
-        `New Patient ID: ${customId}\n\n` +
-        `All patient identifiable information will be anonymized.\n` +
-        `Continue?`
-      );
-      
-      if (!proceed) {
-        return;
-      }
-      
-      // Process DICOM files
-      const zip = await processDicomBatch(
-        this.selectedFiles, 
-        customId,
-        (progress) => this.updateProgress(15 + (progress * 0.8))
-      );
-      
-      this.updateProgress(95);
-      
-      // Generate ZIP file
-      const zipBlob = await zip.generateAsync({ 
-        type: 'blob',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 6 }
-      });
-      
-      this.updateProgress(100);
-      
-      // Download
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${customId}_anonymized.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      alert(
-        `Anonymization complete!\n\n` +
-        `${analysis.validDicoms} DICOM files anonymized\n` +
-        `Organized by Study/Series/SOP structure\n` +
-        `Downloaded as: ${customId}_anonymized.zip`
-      );
-      
-    } catch (error) {
-      console.error('DICOM anonymization error:', error);
-      throw error;
-    }
-  }
-
-  async convertPdfToMd() {
-    const file = this.selectedFiles[0];
-    
-    this.updateProgress(10);
-    
-    try {
-      // Convert PDF to Markdown
-      const markdown = await convertPdfToMarkdown(file);
-      
-      this.updateProgress(90);
-      
-      // Generate filename
-      const originalName = file.name.replace(/\.pdf$/i, '');
-      const filename = `${originalName}.md`;
-      
-      // Download markdown file
-      downloadFile(markdown, filename, 'text/markdown');
-      
-      this.updateProgress(100);
-      
-    } catch (error) {
-      console.error('PDF to Markdown conversion error:', error);
-      throw new Error('Failed to convert PDF. The file may be corrupted or contain unsupported content.');
     }
   }
 
