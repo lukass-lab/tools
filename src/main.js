@@ -498,7 +498,7 @@ class ToolManager {
       newPdf.addPage(page);
       
       const pdfBytes = await newPdf.save();
-      const filename = `${file.name.replace('.pdf', '')}_page_${i + 1}.pdf`;
+      const filename = `${file.name.replace(/\.pdf$/i, '')}_page_${i + 1}.pdf`;
       downloadFile(pdfBytes, filename, 'application/pdf');
       
       this.updateProgress(((i + 1) / pageCount) * 100);
@@ -603,7 +603,7 @@ class ToolManager {
       this.updateProgress(90);
       
       // Generate filename
-      const originalName = file.name.replace('.pdf', '');
+      const originalName = file.name.replace(/\.pdf$/i, '');
       const filename = `${originalName}.md`;
       
       // Download markdown file

@@ -40,6 +40,8 @@ npm run preview
 
 Browser tests require Node.js 22+ and an installed Chrome, Chromium, or Edge browser. Set `CHROME_PATH` to the executable path if it is not detected automatically. The suite runs headlessly against a local server, uses generated documents, and checks conversion, failures, cancellation, navigation, file handling, and mobile layout. It requires no external service or document upload.
 
+GitHub Actions runs both test suites on pushes to `main` and pull requests, using Node.js 22 and the Chrome browser included in the Ubuntu 24.04 runner. The browser test command rebuilds `docs/` in the CI checkout; the workflow does not commit or deploy that output.
+
 ## Project Structure
 
 ```

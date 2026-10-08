@@ -386,6 +386,8 @@ try {
 
   await navigate('pdf2md');
   await runConversion('custom.pdf', pdfBytes, /Conversion works locally/, 'existing PDF converter');
+  await runConversion('Report.PDF', pdfBytes, /Conversion works locally/, 'uppercase PDF filename');
+  await runConversion('a.pdf.b.pdf', pdfBytes, /Conversion works locally/, 'multiple PDF suffixes');
   await navigate('merge');
   await select('first.pdf', pdfBytes);
   await select('second.pdf', pdfBytes);
@@ -417,14 +419,20 @@ try {
   await waitFor('window.__downloads.at(-1)?.base64');
   const mergedPdf = await PDFDocument.load(Buffer.from(await evaluate('window.__downloads.at(-1).base64'), 'base64'));
   assert.equal(mergedPdf.getPageCount(), 2);
-  await navigate('split');
-  await select('two-pages.pdf', await mergedPdf.save());
-  await evaluate('document.querySelector("#processBtn").click()');
-  await waitFor(`!document.querySelector('[aria-busy="true"]')`);
-  await waitFor('window.__downloads.length === 2 && window.__downloads.every(output => output.base64)');
-  for (const output of await evaluate('window.__downloads')) {
-    const splitPdf = await PDFDocument.load(Buffer.from(output.base64, 'base64'));
-    assert.equal(splitPdf.getPageCount(), 1);
+  const splitBytes = await mergedPdf.save();
+  for (const [name, stem] of [['two-pages.pdf', 'two-pages'], ['Report.PDF', 'Report'], ['a.pdf.b.pdf', 'a.pdf.b']]) {
+    await navigate('split');
+    await select(name, splitBytes);
+    await evaluate('document.querySelector("#processBtn").click()');
+    await waitFor(`!document.querySelector('[aria-busy="true"]')`);
+    await waitFor('window.__downloads.length === 2 && window.__downloads.every(output => output.base64)');
+    const outputs = await evaluate('window.__downloads');
+    assert.deepEqual(outputs.map(output => output.name), [`${stem}_page_1.pdf`, `${stem}_page_2.pdf`]);
+    for (const output of outputs) {
+      const splitPdf = await PDFDocument.load(Buffer.from(output.base64, 'base64'));
+      assert.equal(splitPdf.getPageCount(), 1);
+    }
+    console.log(`PASS split PDF filename: ${name}`);
   }
   console.log('PASS existing PDF conversion, PDF merge/split, reordering and busy-state file protection');
 
