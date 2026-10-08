@@ -9,5 +9,9 @@ export default defineConfig({
     outDir: 'docs',
     sourcemap: true
   },
+  worker: {
+    // The wasm converters' glue code uses import.meta.url, which needs module workers
+    format: 'es'
+  },
   base: '/tools/'
 });

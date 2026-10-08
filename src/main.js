@@ -1,11 +1,30 @@
 import { PDFDocument } from 'pdf-lib';
 import { downloadFile, formatFileSize, generateAnonymousId } from './utils';
 import { convertPdfToMarkdown } from './pdf2md';
+import { convertDocumentToMarkdown } from './docConverters';
 import { 
   processDicomBatch, 
   analyzeDicomFiles, 
   TAGS_TO_ANONYMIZE 
 } from './dicomUtils';
+
+const ANYDOC_EXTENSIONS = [
+  '.docx', '.docm', '.doc', '.odt', '.rtf', '.epub',
+  '.pptx', '.pptm', '.ppsx', '.ppt', '.odp',
+  '.xlsx', '.xlsm', '.xls', '.ods', '.csv', '.pdf'
+];
+
+// From docling.rs-wasm's supported_extensions() for the pinned version
+const DOCLING_EXTENSIONS = [
+  'docx', 'dotx', 'docm', 'dotm', 'pptx', 'potx', 'ppsx', 'pptm', 'potm', 'ppsm',
+  'md', 'txt', 'text', 'qmd', 'rmd', 'html', 'htm', 'xhtml', 'xml', 'nxml', 'dclg', 'dclx',
+  'adoc', 'asciidoc', 'asc', 'csv', 'tsv', 'xlsx', 'xlsm', 'xlsb', 'xltx', 'xltm',
+  'odt', 'ott', 'ods', 'ots', 'odp', 'otp', 'sxw', 'stw', 'sxg', 'sxc', 'stc', 'sxi', 'sti',
+  'fodt', 'fods', 'fodp', 'json', 'sdw', 'sda', 'sdd', 'vor', 'abw', 'zabw', 'awt',
+  'wpd', 'wp', 'wp5', 'wp6', 'wpt', 'wps', 'dbf', 'dif', 'slk', 'sylk',
+  'wk1', 'wk2', 'wk3', 'wk4', 'wks', 'wrk', '123', 'wq1', 'wq2', 'wb1', 'wb2', 'wb3', 'qpw', 'xlr',
+  'vtt', 'tex', 'latex', 'eml', 'epub', 'mhtml', 'mht', 'rtf', 'vsdx', 'vsdm', 'pdf', 'djvu', 'djv'
+].map(ext => `.${ext}`);
 
 const TOOLS = {
   merge: {
@@ -16,6 +35,7 @@ const TOOLS = {
     uploadText: 'Select PDF files',
     uploadSubtext: 'or drop PDFs here',
     accept: '.pdf',
+    extensions: ['.pdf'],
     multiple: true,
     hint: 'Drag and drop files to reorder them before merging'
   },
@@ -27,6 +47,7 @@ const TOOLS = {
     uploadText: 'Select PDF file',
     uploadSubtext: 'or drop PDF here',
     accept: '.pdf',
+    extensions: ['.pdf'],
     multiple: false,
     hint: null
   },
@@ -38,6 +59,7 @@ const TOOLS = {
     uploadText: 'Select DICOM folder or files',
     uploadSubtext: 'or drop DICOM folder/files here',
     accept: '.dcm,.dicom',
+    extensions: null, // DICOM files often lack extensions; the parser validates them
     multiple: true,
     webkitdirectory: true,
     hint: 'All patient identifiers will be replaced with anonymous values'
@@ -50,6 +72,7 @@ const TOOLS = {
     uploadText: 'Select PDF file',
     uploadSubtext: 'or drop PDF here',
     accept: '.pdf',
+    extensions: ['.pdf'],
     multiple: false,
     hint: null
   },
@@ -61,8 +84,37 @@ const TOOLS = {
     uploadText: 'Select Markdown or text files',
     uploadSubtext: 'or drop .md / .txt files here',
     accept: '.md,.markdown,.txt,.text,.mdx',
+    extensions: ['.md', '.markdown', '.txt', '.text', '.mdx'],
     multiple: true,
     hint: 'Drag and drop files to reorder them before merging'
+  },
+  anydoc: {
+    title: 'AnyDoc to Markdown',
+    description: 'Convert Word, PowerPoint, Excel, OpenDocument, EPUB, RTF, CSV and text-based PDF files to Markdown with the AnyDoc engine.',
+    buttonText: 'Convert & Download',
+    icon: '🗂️',
+    uploadText: 'Select a document',
+    uploadSubtext: 'DOCX, DOC, PPTX, XLSX, ODT, EPUB, RTF, CSV, PDF and more',
+    accept: ANYDOC_EXTENSIONS.join(','),
+    extensions: ANYDOC_EXTENSIONS,
+    note: 'Files are converted locally. Scanned PDFs need OCR, which is not included.',
+    multiple: false,
+    hint: null,
+    engine: 'anydoc'
+  },
+  docling: {
+    title: 'Docling to Markdown',
+    description: 'Convert Office, OpenDocument, HTML, EPUB, LaTeX, e-mail and text-based PDF files to Markdown with the Docling engine.',
+    buttonText: 'Convert & Download',
+    icon: '🧾',
+    uploadText: 'Select a document',
+    uploadSubtext: 'DOCX, PPTX, XLSX, ODT, HTML, EPUB, LaTeX, EML, PDF and more',
+    accept: DOCLING_EXTENSIONS.join(','),
+    extensions: DOCLING_EXTENSIONS,
+    note: 'Files are converted locally. PDF output uses the text layer only, without heading or table detection. Scanned PDFs need OCR, which is not included.',
+    multiple: false,
+    hint: null,
+    engine: 'docling'
   }
 };
 
@@ -71,10 +123,16 @@ class ToolManager {
     this.selectedFiles = [];
     this.currentTool = 'merge';
     this.draggedIndex = null;
+    this.busy = false;
     
     this.initElements();
     this.attachListeners();
-    this.switchTool('merge');
+    this.switchTool(this.toolFromHash());
+  }
+
+  toolFromHash() {
+    const tool = window.location.hash.slice(1);
+    return Object.hasOwn(TOOLS, tool) ? tool : 'merge';
   }
 
   initElements() {
@@ -82,6 +140,8 @@ class ToolManager {
       navItems: document.querySelectorAll('.nav-item'),
       toolTitle: document.getElementById('tool-title'),
       toolDescription: document.getElementById('tool-description'),
+      toolNote: document.getElementById('tool-note'),
+      toolPanel: document.querySelector('.tool-panel'),
       uploadArea: document.getElementById('uploadArea'),
       uploadText: document.getElementById('uploadText'),
       uploadSubtext: document.getElementById('uploadSubtext'),
@@ -89,6 +149,7 @@ class ToolManager {
       fileList: document.getElementById('fileList'),
       processBtn: document.getElementById('processBtn'),
       processText: document.getElementById('processText'),
+      cancelBtn: document.getElementById('cancelBtn'),
       progressContainer: document.getElementById('progressContainer'),
       progressBar: document.getElementById('progressBar'),
       progressText: document.getElementById('progressText'),
@@ -99,21 +160,32 @@ class ToolManager {
   }
 
   attachListeners() {
-    // Navigation
-    this.els.navItems.forEach(item => {
-      item.addEventListener('click', (e) => {
-        e.preventDefault();
-        const tool = item.dataset.tool;
-        this.switchTool(tool);
-        this.els.navItems.forEach(nav => nav.classList.remove('active'));
-        item.classList.add('active');
-      });
+    document.querySelector('.header').addEventListener('click', (e) => {
+      if (this.busy && e.target.closest('a')) e.preventDefault();
+    });
+    // Navigation: nav links set the URL hash, so tools can be linked, refreshed and use Back/Forward
+    window.addEventListener('hashchange', () => {
+      if (this.busy) {
+        // Keep the running conversion's tool in view
+        history.replaceState(null, '', `#${this.currentTool}`);
+        return;
+      }
+      this.switchTool(this.toolFromHash());
     });
 
     // Upload area
-    this.els.uploadArea.addEventListener('click', () => this.els.fileInput.click());
+    this.els.uploadArea.addEventListener('click', () => {
+      if (!this.busy) this.els.fileInput.click();
+    });
+    this.els.uploadArea.addEventListener('keydown', (e) => {
+      if (e.target === this.els.uploadArea && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        if (!this.busy) this.els.fileInput.click();
+      }
+    });
     this.els.uploadArea.addEventListener('dragover', (e) => {
       e.preventDefault();
+      if (this.busy) return;
       this.els.uploadArea.classList.add('dragover');
     });
     this.els.uploadArea.addEventListener('dragleave', () => {
@@ -128,22 +200,36 @@ class ToolManager {
     // File input
     this.els.fileInput.addEventListener('change', (e) => {
       this.handleFiles(e.target.files);
+      // Allow re-selecting the same file after it was removed
+      e.target.value = '';
     });
 
     // Process button
     this.els.processBtn.addEventListener('click', () => this.processFiles());
+    this.els.cancelBtn.addEventListener('click', () => this.conversionController?.abort());
   }
 
   switchTool(tool) {
     this.currentTool = tool;
     const toolData = TOOLS[tool];
+    if (window.location.hash !== `#${tool}`) history.replaceState(null, '', `#${tool}`);
+
+    this.els.navItems.forEach(nav => {
+      const active = nav.dataset.tool === tool;
+      nav.classList.toggle('active', active);
+      if (active) nav.setAttribute('aria-current', 'page');
+      else nav.removeAttribute('aria-current');
+    });
     
     this.els.toolTitle.textContent = toolData.title;
     this.els.toolDescription.textContent = toolData.description;
+    this.els.toolNote.textContent = toolData.note ?? '';
+    this.els.toolNote.classList.toggle('hidden', !toolData.note);
     this.els.processText.textContent = toolData.buttonText;
     this.els.uploadIcon.textContent = toolData.icon;
     this.els.uploadText.textContent = toolData.uploadText;
     this.els.uploadSubtext.textContent = toolData.uploadSubtext;
+    this.els.uploadArea.setAttribute('aria-label', toolData.uploadText);
     
     this.els.fileInput.accept = toolData.accept;
     this.els.fileInput.multiple = toolData.multiple;
@@ -159,28 +245,25 @@ class ToolManager {
     
     this.selectedFiles = [];
     this.updateFileList();
-    
-    // Reset button text to ensure it's correct
-    this.els.processText.textContent = toolData.buttonText;
+    // Update the panel before measuring navigation; its height can add a page scrollbar.
+    [...this.els.navItems].find(nav => nav.dataset.tool === tool)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   handleFiles(files) {
-    const toolData = TOOLS[this.currentTool];
-    let validFiles = Array.from(files);
+    if (this.busy) return;
 
-    // Filter based on file type
-    if (this.currentTool === 'dicom') {
-      // Accept any file for DICOM - let the parser validate
-      // DICOM files may not have extensions or have various extensions
-      validFiles = validFiles; // Accept all files
-    } else if (this.currentTool === 'mergemd') {
-      const mdExtensions = ['.md', '.markdown', '.txt', '.text', '.mdx'];
-      validFiles = validFiles.filter(f => 
-        mdExtensions.some(ext => f.name.toLowerCase().endsWith(ext))
-      );
-    } else {
-      // For PDF tools, strictly check PDF type
-      validFiles = validFiles.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    const toolData = TOOLS[this.currentTool];
+    const allFiles = Array.from(files);
+    const isValid = (f) =>
+      toolData.extensions.some(ext => f.name.toLowerCase().endsWith(ext)) ||
+      (f.type === 'application/pdf' && toolData.extensions.includes('.pdf'));
+    const validFiles = toolData.extensions ? allFiles.filter(isValid) : allFiles;
+
+    if (validFiles.length < allFiles.length) {
+      const rejected = allFiles.filter(f => !validFiles.includes(f)).map(f => f.name);
+      alert(`Unsupported file type for ${toolData.title}:\n\n${rejected.join('\n')}`);
+      if (validFiles.length === 0) return;
     }
 
     if (toolData.multiple) {
@@ -195,7 +278,7 @@ class ToolManager {
   updateFileList() {
     const toolData = TOOLS[this.currentTool];
     const hasFiles = this.selectedFiles.length > 0;
-    const showHint = toolData.hint && this.selectedFiles.length > 1;
+    const showHint = Boolean(toolData.hint && this.selectedFiles.length > 1);
 
     this.els.fileList.classList.toggle('hidden', !hasFiles);
     this.els.processBtn.classList.toggle('hidden', !hasFiles);
@@ -205,43 +288,37 @@ class ToolManager {
       this.els.hintText.textContent = toolData.hint;
     }
     
-    let fileListHTML = '';
-    
-    // For DICOM with many files, show summary instead of listing all
-    if (this.currentTool === 'dicom' && this.selectedFiles.length > 10) {
-      const totalSize = this.selectedFiles.reduce((sum, f) => sum + f.size, 0);
-      fileListHTML = `
-        <div class="file-item">
-          <div class="file-item-content">
-            <div>
-              <div class="file-name">📁 ${this.selectedFiles.length} DICOM files selected</div>
-              <div class="file-size">Total size: ${formatFileSize(totalSize)}</div>
-            </div>
-          </div>
-          <button class="remove-btn" data-index="all">✕</button>
+    // Keep the original hint nodes attached, and render file names as plain text.
+    this.els.fileList.replaceChildren(this.els.orderHint);
+    const summary = this.currentTool === 'dicom' && this.selectedFiles.length > 10;
+    const displayFiles = summary ? [{
+      name: `📁 ${this.selectedFiles.length} DICOM files selected`,
+      size: this.selectedFiles.reduce((sum, f) => sum + f.size, 0)
+    }] : this.selectedFiles;
+    displayFiles.forEach((file, index) => {
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.dataset.index = String(index);
+      item.draggable = showHint && !summary && !this.busy;
+      item.innerHTML = `
+        <div class="file-item-content">
+          ${showHint && !summary ? '<span class="drag-handle" aria-hidden="true">⋮⋮</span>' : ''}
+          <div><div class="file-name"></div><div class="file-size"></div></div>
         </div>
-      `;
-    } else {
-      // Show individual files for PDF or small DICOM batches
-      fileListHTML = this.selectedFiles.map((file, index) => `
-        <div class="file-item" draggable="${showHint}" data-index="${index}">
-          <div class="file-item-content">
-            ${showHint ? '<span class="drag-handle">⋮⋮</span>' : ''}
-            <div>
-              <div class="file-name">${file.name}</div>
-              <div class="file-size">${formatFileSize(file.size)}</div>
-            </div>
-          </div>
-          <button class="remove-btn" data-index="${index}">✕</button>
-        </div>
-      `).join('');
-    }
-    
-    this.els.fileList.innerHTML = this.els.orderHint.outerHTML + fileListHTML;
+        <button class="remove-btn" type="button">✕</button>`;
+      item.querySelector('.file-name').textContent = file.name;
+      item.querySelector('.file-size').textContent = `${summary ? 'Total size: ' : ''}${formatFileSize(file.size)}`;
+      const removeBtn = item.querySelector('.remove-btn');
+      removeBtn.dataset.index = summary ? 'all' : String(index);
+      removeBtn.disabled = this.busy;
+      removeBtn.setAttribute('aria-label', summary ? 'Remove all files' : `Remove ${file.name}`);
+      this.els.fileList.appendChild(item);
+    });
     
     // Attach remove handlers
     this.els.fileList.querySelectorAll('.remove-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        if (this.busy) return;
         const idx = e.currentTarget.dataset.index;
         if (idx === 'all') {
           this.selectedFiles = [];
@@ -253,7 +330,7 @@ class ToolManager {
     });
 
     // Drag and drop for reordering
-    if (showHint && this.selectedFiles.length <= 10) {
+    if (showHint && !summary) {
       this.setupDragAndDrop();
     }
   }
@@ -263,12 +340,14 @@ class ToolManager {
     
     fileItems.forEach(item => {
       item.addEventListener('dragstart', (e) => {
+        if (this.busy) { e.preventDefault(); return; }
         this.draggedIndex = parseInt(e.currentTarget.dataset.index);
         e.currentTarget.classList.add('dragging');
       });
       
       item.addEventListener('dragover', (e) => {
         e.preventDefault();
+        if (this.busy) return;
         const targetIndex = parseInt(e.currentTarget.dataset.index);
         if (targetIndex !== this.draggedIndex) {
           e.currentTarget.classList.add('drag-over');
@@ -281,9 +360,10 @@ class ToolManager {
       
       item.addEventListener('drop', (e) => {
         e.preventDefault();
+        if (this.busy) return;
         const targetIndex = parseInt(e.currentTarget.dataset.index);
         
-        if (this.draggedIndex !== null && targetIndex !== this.draggedIndex) {
+        if (Number.isInteger(this.draggedIndex) && targetIndex !== this.draggedIndex) {
           const draggedFile = this.selectedFiles[this.draggedIndex];
           this.selectedFiles.splice(this.draggedIndex, 1);
           this.selectedFiles.splice(targetIndex, 0, draggedFile);
@@ -308,12 +388,27 @@ class ToolManager {
   }
 
   async processFiles() {
-    if (this.selectedFiles.length === 0) return;
+    if (this.busy || this.selectedFiles.length === 0) return;
     
+    this.busy = true;
+    history.replaceState(null, '', `#${this.currentTool}`);
+    this.els.toolPanel.setAttribute('aria-busy', 'true');
+    this.els.fileInput.disabled = true;
+    this.els.uploadArea.setAttribute('aria-disabled', 'true');
+    this.els.uploadArea.classList.remove('dragover');
+    this.els.navItems.forEach(nav => nav.setAttribute('aria-disabled', 'true'));
+    this.draggedIndex = null;
+    this.updateFileList();
+    const isDocumentConversion = Boolean(TOOLS[this.currentTool].engine);
+    this.conversionController = isDocumentConversion ? new AbortController() : null;
+    this.els.cancelBtn.classList.toggle('hidden', !isDocumentConversion);
     this.els.processBtn.disabled = true;
-    this.els.processBtn.textContent = 'Processing...';
+    // Set the inner span (not the button) so the label element survives for later tool switches
+    this.els.processText.textContent = 'Processing...';
     this.els.progressContainer.classList.remove('hidden');
     this.updateProgress(0);
+    this.els.progressContainer.classList.toggle('indeterminate', isDocumentConversion);
+    if (isDocumentConversion) this.els.progressText.textContent = 'Reading document…';
     
     try {
       switch (this.currentTool) {
@@ -332,17 +427,32 @@ class ToolManager {
         case 'mergemd':
           await this.mergeMarkdown();
           break;
+        case 'anydoc':
+        case 'docling':
+          await this.convertDocumentToMd(TOOLS[this.currentTool].engine);
+          break;
       }
       
       this.selectedFiles = [];
       this.updateFileList();
     } catch (error) {
-      console.error('Processing error:', error);
-      alert(`Error: ${error.message}`);
+      if (error.name !== 'AbortError') {
+        console.error('Processing error:', error);
+        alert(`Error: ${error.message}`);
+      }
     } finally {
+      this.busy = false;
+      this.conversionController = null;
+      this.els.toolPanel.removeAttribute('aria-busy');
+      this.els.fileInput.disabled = false;
+      this.els.uploadArea.removeAttribute('aria-disabled');
+      this.els.navItems.forEach(nav => nav.removeAttribute('aria-disabled'));
+      this.els.cancelBtn.classList.add('hidden');
       this.els.processBtn.disabled = false;
-      this.els.processBtn.textContent = this.els.processText.textContent;
+      this.els.processText.textContent = TOOLS[this.currentTool].buttonText;
       this.els.progressContainer.classList.add('hidden');
+      this.els.progressContainer.classList.remove('indeterminate');
+      this.updateFileList();
     }
   }
 
@@ -496,6 +606,22 @@ class ToolManager {
       console.error('PDF to Markdown conversion error:', error);
       throw new Error('Failed to convert PDF. The file may be corrupted or contain unsupported content.');
     }
+  }
+
+  async convertDocumentToMd(engine) {
+    const file = this.selectedFiles[0];
+    const markdown = await convertDocumentToMarkdown(engine, file, {
+      signal: this.conversionController.signal,
+      onStatus: (status) => {
+        this.els.progressText.textContent = status === 'loading'
+          ? 'Loading converter for first use…' : 'Converting document…';
+      }
+    });
+
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    downloadFile(markdown, `${baseName}.md`, 'text/markdown');
+
+    this.updateProgress(100);
   }
 
   async mergeMarkdown() {

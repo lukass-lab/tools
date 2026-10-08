@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medical Tools - PDF & DICOM Anonymizer</title>
+    <title>Medical Tools - PDF & DICOM Anonymizer</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 85 L20 55 C10 45 10 30 25 20 C35 15 45 20 50 30 C55 20 65 15 75 20 C90 30 90 45 80 55 Z' fill='%23dc3545'/></svg>">
-  <script type="module" crossorigin src="/tools/assets/index-CF32HUvX.js"></script>
-  <link rel="stylesheet" crossorigin href="/tools/assets/index-C6wx5qyx.css">
+  <script type="module" crossorigin src="/tools/assets/index-B13I117x.js"></script>
+  <link rel="stylesheet" crossorigin href="/tools/assets/index-CPIa_oTA.css">
 </head>
 <body>
     <header class="header">
@@ -17,12 +17,14 @@
                 </svg>
                 Medical Tools
             </a>
-            <nav class="nav-menu">
-                <a href="#" class="nav-item active" data-tool="merge">Merge PDF</a>
-                <a href="#" class="nav-item" data-tool="split">Split PDF</a>
-                <a href="#" class="nav-item" data-tool="dicom">Anonymize DICOM</a>
-                <a href="#" class="nav-item" data-tool="pdf2md">PDF to Markdown</a>
-                <a href="#" class="nav-item" data-tool="mergemd">Merge Markdown</a>
+            <nav class="nav-menu" aria-label="Tools">
+                <a href="#merge" class="nav-item" data-tool="merge">Merge PDF</a>
+                <a href="#split" class="nav-item" data-tool="split">Split PDF</a>
+                <a href="#dicom" class="nav-item" data-tool="dicom">Anonymize DICOM</a>
+                <a href="#pdf2md" class="nav-item" data-tool="pdf2md">PDF to Markdown</a>
+                <a href="#mergemd" class="nav-item" data-tool="mergemd">Merge Markdown</a>
+                <a href="#anydoc" class="nav-item" data-tool="anydoc">AnyDoc to Markdown</a>
+                <a href="#docling" class="nav-item" data-tool="docling">Docling to Markdown</a>
             </nav>
         </div>
     </header>
@@ -31,8 +33,9 @@
         <div class="tool-panel">
             <h1 id="tool-title">Merge PDF files</h1>
             <p id="tool-description">Combine PDFs in the order you want with the easiest PDF merger available.</p>
-            
-            <div class="upload-area" id="uploadArea">
+            <p id="tool-note" class="tool-note hidden"></p>
+
+            <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-label="Select files">
                 <div class="upload-icon">📄</div>
                 <div class="upload-text" id="uploadText">Select PDF files</div>
                 <div class="upload-subtext" id="uploadSubtext">or drop PDFs here</div>
@@ -44,17 +47,18 @@
                     💡 <span id="hintText">Drag and drop files to reorder them before merging</span>
                 </div>
             </div>
-            
+
             <div id="progressContainer" class="progress hidden">
                 <div id="progressBar" class="progress-bar"></div>
-                <div id="progressText" class="progress-text">0%</div>
+                <div id="progressText" class="progress-text" role="status" aria-live="polite">0%</div>
             </div>
-            
+
             <button id="processBtn" class="btn process-btn hidden">
                 <span id="processText">Merge PDF files</span>
             </button>
+            <button id="cancelBtn" class="btn cancel-btn hidden" type="button">Cancel conversion</button>
         </div>
     </main>
-
+
 </body>
 </html>
