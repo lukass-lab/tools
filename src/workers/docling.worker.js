@@ -19,7 +19,8 @@ self.onmessage = async ({ data: { id, name, buffer } }) => {
   } catch (error) {
     const message = error?.message ?? String(error);
     const code = !initialized ? 'loadFailed'
-      : /no embedded text layer/i.test(message) ? 'needsOcr'
+      // This engine also uses this message for malformed PDFs, so avoid diagnosing a scan.
+      : /no embedded text layer/i.test(message) ? 'noText'
       : /encrypted|password.protected/i.test(message) ? 'encrypted'
       : /not compiled in|unsupported|unknown format/i.test(message) ? 'unsupported'
       : /parse error|bad zip/i.test(message) ? 'malformed' : null;

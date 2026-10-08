@@ -17,6 +17,8 @@ function friendlyMessage(engine, { code, pages, message }) {
       return pages?.length
         ? `This PDF has scanned or image-only pages (${pages.join(', ')}). ${name} cannot read them without OCR.`
         : `This PDF has no text layer (scanned or image-only). ${name} cannot read it without OCR.`;
+    case 'noText':
+      return 'No readable PDF text could be extracted. The file may be scanned, image-only, or damaged. Scanned PDFs require OCR, which is not included.';
     case 'encrypted':
       return 'The file is encrypted or password-protected. Remove the protection and try again.';
     case 'unsupported':

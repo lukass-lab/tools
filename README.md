@@ -31,9 +31,14 @@ npm run build
 # Run converter lifecycle regression tests (Node.js 22+)
 npm test
 
+# Build and run production UI regression tests in installed Chrome/Chromium
+npm run test:browser
+
 # Preview production build
 npm run preview
 ```
+
+Browser tests require Node.js 22+ and an installed Chrome, Chromium, or Edge browser. Set `CHROME_PATH` to the executable path if it is not detected automatically. The suite runs headlessly against a local server, uses generated documents, and checks conversion, failures, cancellation, navigation, file handling, and mobile layout. It requires no external service or document upload.
 
 ## Project Structure
 
@@ -102,7 +107,11 @@ Converts one document at a time with [docling.rs](https://github.com/docling-pro
 
 Both engines load on first use (AnyDoc ≈ 6.7 MB, Docling ≈ 14 MB of WebAssembly, cached by the browser afterwards) and run in a Web Worker so the page stays responsive.
 
-Conversion status shows when the engine is loading and when it is converting. **Cancel conversion** stops the worker and keeps the selected file for retry. Failed engine loads can also be retried. Tool switching, uploads, removal and reordering are disabled while a job runs.
+Conversion status shows when the engine is loading and when it is converting. **Cancel conversion** stops the worker and keeps the selected file for retry. Failed engine loads can also be retried. Header links, uploads, removal and reordering are disabled while a job runs.
+
+Browser Back/Forward preserves its history while processing continues. The current tool stays visible until the job finishes, fails, or is cancelled; the latest requested tool then opens. Returning to the running tool cancels the pending switch. If you switch to a different tool, its file selection starts empty.
+
+Docling can report the same missing-text error for scanned and damaged PDFs. The message describes both possibilities; it does not assume every unreadable PDF needs OCR.
 
 ## Privacy & Security
 

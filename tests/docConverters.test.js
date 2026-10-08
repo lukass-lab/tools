@@ -127,6 +127,21 @@ test('unknown engines and file-reading errors reject without starting a worker',
   assert.equal(instances.length, 0);
 });
 
+test('ambiguous Docling PDF errors mention damage without diagnosing a scanned file', async t => {
+  const { convert, instances } = await harness(t);
+  const pending = convert('docling', documentFile);
+  const rejected = assert.rejects(pending, error => {
+    assert.match(error.message, /No readable PDF text could be extracted/);
+    assert.match(error.message, /may be scanned, image-only, or damaged/);
+    assert.doesNotMatch(error.message, /This PDF has no text layer/);
+    return true;
+  });
+  await setImmediate();
+  const worker = instances[0];
+  worker.reply({ id: worker.requests[0].id, ok: false, code: 'noText' });
+  await rejected;
+});
+
 test('a pre-cancelled request does not read the file', async t => {
   const { convert, instances } = await harness(t);
   let reads = 0;

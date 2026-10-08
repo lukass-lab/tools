@@ -141,6 +141,7 @@ class ToolManager {
       toolTitle: document.getElementById('tool-title'),
       toolDescription: document.getElementById('tool-description'),
       toolNote: document.getElementById('tool-note'),
+      navigationNotice: document.getElementById('navigation-notice'),
       toolPanel: document.querySelector('.tool-panel'),
       uploadArea: document.getElementById('uploadArea'),
       uploadText: document.getElementById('uploadText'),
@@ -164,14 +165,7 @@ class ToolManager {
       if (this.busy && e.target.closest('a')) e.preventDefault();
     });
     // Navigation: nav links set the URL hash, so tools can be linked, refreshed and use Back/Forward
-    window.addEventListener('hashchange', () => {
-      if (this.busy) {
-        // Keep the running conversion's tool in view
-        history.replaceState(null, '', `#${this.currentTool}`);
-        return;
-      }
-      this.switchTool(this.toolFromHash());
-    });
+    window.addEventListener('hashchange', () => this.syncToolFromHash());
 
     // Upload area
     this.els.uploadArea.addEventListener('click', () => {
@@ -207,6 +201,20 @@ class ToolManager {
     // Process button
     this.els.processBtn.addEventListener('click', () => this.processFiles());
     this.els.cancelBtn.addEventListener('click', () => this.conversionController?.abort());
+  }
+
+  syncToolFromHash() {
+    const tool = this.toolFromHash();
+    const deferred = this.busy && tool !== this.currentTool;
+    this.els.navigationNotice.classList.toggle('hidden', !deferred);
+    this.els.navigationNotice.textContent = deferred
+      ? `${TOOLS[tool].title} will open when processing finishes.${TOOLS[this.currentTool].engine ? ' Cancel conversion to switch sooner.' : ''}`
+      : '';
+    // Leave browser history untouched during the job. The latest location wins
+    // when it settles, even after several Back/Forward requests.
+    if (this.busy) return;
+    if (tool !== this.currentTool) this.switchTool(tool);
+    else if (window.location.hash !== `#${tool}`) history.replaceState(null, '', `#${tool}`);
   }
 
   switchTool(tool) {
@@ -391,7 +399,7 @@ class ToolManager {
     if (this.busy || this.selectedFiles.length === 0) return;
     
     this.busy = true;
-    history.replaceState(null, '', `#${this.currentTool}`);
+    this.syncToolFromHash();
     this.els.toolPanel.setAttribute('aria-busy', 'true');
     this.els.fileInput.disabled = true;
     this.els.uploadArea.setAttribute('aria-disabled', 'true');
@@ -453,6 +461,7 @@ class ToolManager {
       this.els.progressContainer.classList.add('hidden');
       this.els.progressContainer.classList.remove('indeterminate');
       this.updateFileList();
+      this.syncToolFromHash();
     }
   }
 
